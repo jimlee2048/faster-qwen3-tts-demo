@@ -1,0 +1,24 @@
+name: Update Docker Hub Description
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/update-dockerhub-desc.yml
+      - README.md
+
+jobs:
+  update-dockerhub-desc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker Hub Description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: jimlee2048/faster-qwen3-tts-demo
+          short-description: ${{ github.event.repository.description }}
+          enable-url-completion: true

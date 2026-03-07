@@ -1,36 +1,46 @@
----
-title: faster-qwen3-tts
-author: andito
-emoji: 🎙
-tags: [text-to-speech, streaming, cuda-graphs]
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-app_port: 7860
-preload_from_hub:
-  - nvidia/parakeet-tdt-0.6b-v3
-  - Qwen/Qwen3-TTS-12Hz-0.6B-Base
-  - Qwen/Qwen3-TTS-12Hz-1.7B-Base
-  - Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
-  - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
-  - Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
----
-
 # Faster Qwen3-TTS Demo
 
-This Space hosts the demo UI for **faster-qwen3-tts** with streaming audio, TTFA/RTF metrics, voice clone, custom voices, and voice design.
+[![GitHub Repo](https://img.shields.io/badge/GitHub-jimlee2048%2Ffaster--qwen3--tts--demo-blue?logo=github)](https://github.com/jimlee2048/faster-qwen3-tts-demo)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-jimlee2048%2Ffaster--qwen3--tts--demo-blue?logo=docker)](https://hub.docker.com/r/jimlee2048/faster-qwen3-tts-demo)
 
-## Run locally (no Docker)
+Forked from the original Hugging Face Space: [HuggingFaceM4/faster-qwen3-tts-demo](https://huggingface.co/spaces/HuggingFaceM4/faster-qwen3-tts-demo), with the following modifications:
+
+- Uses `torch==2.10` with CUDA 13 (`cu130`) for newer GPU support, including Blackwell-class cards such as RTX 5090
+- Removes Hugging Face Space-specific packaging and runtime leftovers
+- Downloads preset reference audio and transcripts during Docker build instead of storing them in the repo
+- Adds GitHub Actions workflow for automatic Docker Hub publishing
+
+## Prerequisites
+
+- NVIDIA GPU with a recent driver
+- NVIDIA Container Toolkit for `--gpus all`
+
+## Quick Start
+
+### Docker Run
 
 ```bash
-pip install "faster-qwen3-tts[demo]"
-python server.py --model Qwen/Qwen3-TTS-12Hz-0.6B-Base
-# open http://localhost:7860
+docker run --gpus all \
+  -p 7860:7860 \
+  jimlee2048/faster-qwen3-tts-demo:latest
 ```
 
-## Run with Docker
+Open `http://localhost:7860` in your browser.
+
+### Docker Compose
+
+Prepare your compose configuration by referencing [compose.yaml](https://raw.githubusercontent.com/jimlee2048/faster-qwen3-tts-demo/refs/heads/main/compose.yaml), then run:
 
 ```bash
-docker build -t faster-qwen3-tts-demo .
-docker run --gpus all -p 7860:7860 faster-qwen3-tts-demo
+docker compose up -d
 ```
+
+Open `http://localhost:7860` in your browser.
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `MODEL_CACHE_SIZE` | No | `5` | Maximum number of TTS models kept in the in-process LRU cache when running the container image. |
+| `ACTIVE_MODELS` | No | All built-in models | Comma-separated allowlist of [HuggingFace model IDs](https://huggingface.co/collections/Qwen/qwen3-tts) exposed by the UI and `/load` endpoint. |
+| `PORT` | No | `7860` | Server port used by `server.py` inside the container. |

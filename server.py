@@ -3,9 +3,9 @@
 Faster Qwen3-TTS Demo Server
 
 Usage:
-    python demo/server.py
-    python demo/server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 7860
-    python demo/server.py --no-preload  # skip startup model load
+    python server.py
+    python server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 7860
+    python server.py --no-preload  # skip startup model load
 """
 
 import argparse
@@ -16,7 +16,6 @@ import hashlib
 import io
 import json
 import os
-import sys
 import tempfile
 import threading
 import time
@@ -31,15 +30,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-# Allow running from any directory
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-try:
-    from faster_qwen3_tts import FasterQwen3TTS
-except ImportError:
-    print("Error: faster_qwen3_tts not found.")
-    print("Install with:  pip install -e .  (from the repo root)")
-    sys.exit(1)
+from faster_qwen3_tts import FasterQwen3TTS
 
 from nano_parakeet import from_pretrained as _parakeet_from_pretrained
 
@@ -59,43 +50,13 @@ if _active_models_env:
 else:
     AVAILABLE_MODELS = list(_ALL_MODELS)
 
-BASE_DIR = Path(__file__).resolve().parent
-# Assets that need to be downloaded at runtime go to a writable directory.
-# /app is read-only in HF Spaces; fall back to /tmp.
-_ASSET_DIR = Path(os.environ.get("ASSET_DIR", "/tmp/faster-qwen3-tts-assets"))
-PRESET_TRANSCRIPTS = _ASSET_DIR / "samples" / "parity" / "icl_transcripts.txt"
+PRESET_ASSET_DIR = Path("/app/assets")
+PRESET_TRANSCRIPTS = PRESET_ASSET_DIR / "samples" / "parity" / "icl_transcripts.txt"
 PRESET_REFS = [
-    ("ref_audio_3", _ASSET_DIR / "ref_audio_3.wav", "Clone 1"),
-    ("ref_audio_2", _ASSET_DIR / "ref_audio_2.wav", "Clone 2"),
-    ("ref_audio", _ASSET_DIR / "ref_audio.wav", "Clone 3"),
+    ("ref_audio_3", PRESET_ASSET_DIR / "presets" / "ref_audio_3.wav", "Clone 1"),
+    ("ref_audio_2", PRESET_ASSET_DIR / "presets" / "ref_audio_2.wav", "Clone 2"),
+    ("ref_audio", PRESET_ASSET_DIR / "presets" / "ref_audio.wav", "Clone 3"),
 ]
-
-_GITHUB_RAW = "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main"
-_PRESET_REMOTE = {
-    "ref_audio":   f"{_GITHUB_RAW}/ref_audio.wav",
-    "ref_audio_2": f"{_GITHUB_RAW}/ref_audio_2.wav",
-    "ref_audio_3": f"{_GITHUB_RAW}/ref_audio_3.wav",
-}
-_TRANSCRIPT_REMOTE = f"{_GITHUB_RAW}/samples/parity/icl_transcripts.txt"
-
-
-def _fetch_preset_assets() -> None:
-    """Download preset wav files and transcripts from GitHub if not present locally."""
-    import urllib.request
-    _ASSET_DIR.mkdir(parents=True, exist_ok=True)
-    PRESET_TRANSCRIPTS.parent.mkdir(parents=True, exist_ok=True)
-    if not PRESET_TRANSCRIPTS.exists():
-        try:
-            urllib.request.urlretrieve(_TRANSCRIPT_REMOTE, PRESET_TRANSCRIPTS)
-        except Exception as e:
-            print(f"Warning: could not fetch transcripts: {e}")
-    for key, path, _ in PRESET_REFS:
-        if not path.exists() and key in _PRESET_REMOTE:
-            try:
-                urllib.request.urlretrieve(_PRESET_REMOTE[key], path)
-                print(f"Downloaded {path.name}")
-            except Exception as e:
-                print(f"Warning: could not fetch {key}: {e}")
 
 _preset_refs: dict[str, dict] = {}
 
@@ -158,7 +119,7 @@ app.add_middleware(
 )
 
 _model_cache: OrderedDict[str, FasterQwen3TTS] = OrderedDict()
-_model_cache_max: int = int(os.environ.get("MODEL_CACHE_SIZE", "2"))
+_model_cache_max: int = int(os.environ.get("MODEL_CACHE_SIZE", "5"))
 _active_model_name: str | None = None
 _loading = False
 _ref_cache: dict[str, str] = {}
@@ -214,7 +175,6 @@ def _get_cached_ref_path(content: bytes) -> str:
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
-_fetch_preset_assets()
 _load_preset_refs()
 
 @app.get("/")
@@ -236,6 +196,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         )
 
     def run():
+        assert _parakeet is not None
         wav, sr = sf.read(io.BytesIO(content), dtype="float32", always_2d=False)
         if wav.ndim > 1:
             wav = wav.mean(axis=1)
@@ -354,12 +315,10 @@ async def generate_stream(
         )
 
     tmp_path = None
-    tmp_is_cached = False
 
     if ref_preset and ref_preset in _preset_refs:
         preset = _preset_refs[ref_preset]
         tmp_path = preset["path"]
-        tmp_is_cached = True
         if not ref_text:
             ref_text = preset["ref_text"]
     elif ref_audio and ref_audio.filename:
@@ -370,7 +329,6 @@ async def generate_stream(
                 detail=_AUDIO_TOO_LARGE_MSG.format(size_mb=len(content) / 1024 / 1024),
             )
         tmp_path = _get_cached_ref_path(content)
-        tmp_is_cached = True
 
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -380,7 +338,10 @@ async def generate_stream(
             # Resolve the model after the generation lock is held so we always
             # use the currently active model, not a stale reference captured
             # before a concurrent /load request changed the active model.
-            model = _model_cache.get(_active_model_name)
+            model_name = _active_model_name
+            if model_name is None:
+                raise RuntimeError("No model loaded. Please load a model first.")
+            model = _model_cache.get(model_name)
             if model is None:
                 raise RuntimeError("No model loaded. Please load a model first.")
 
@@ -502,8 +463,6 @@ async def generate_stream(
             loop.call_soon_threadsafe(queue.put_nowait, json.dumps(err))
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
-            if tmp_path and os.path.exists(tmp_path) and not tmp_is_cached:
-                os.unlink(tmp_path)
 
     async def sse():
         global _generation_waiters
@@ -567,12 +526,10 @@ async def generate_non_streaming(
         )
 
     tmp_path = None
-    tmp_is_cached = False
 
     if ref_preset and ref_preset in _preset_refs:
         preset = _preset_refs[ref_preset]
         tmp_path = preset["path"]
-        tmp_is_cached = True
         if not ref_text:
             ref_text = preset["ref_text"]
     elif ref_audio and ref_audio.filename:
@@ -583,11 +540,13 @@ async def generate_non_streaming(
                 detail=_AUDIO_TOO_LARGE_MSG.format(size_mb=len(content) / 1024 / 1024),
             )
         tmp_path = _get_cached_ref_path(content)
-        tmp_is_cached = True
 
     def run():
         # Resolve the model after the generation lock is held.
-        model = _model_cache.get(_active_model_name)
+        model_name = _active_model_name
+        if model_name is None:
+            raise RuntimeError("No model loaded. Please load a model first.")
+        model = _model_cache.get(model_name)
         if model is None:
             raise RuntimeError("No model loaded. Please load a model first.")
         t0 = time.perf_counter()
@@ -654,8 +613,6 @@ async def generate_non_streaming(
             _generation_lock.release()
         else:
             _generation_waiters -= 1
-        if tmp_path and os.path.exists(tmp_path) and not tmp_is_cached:
-            os.unlink(tmp_path)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

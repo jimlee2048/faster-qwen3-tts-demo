@@ -5,7 +5,15 @@ services:
     ports:
       - "7860:7860"
     environment:
+      # Maximum number of TTS models kept in the in-process LRU cache when running the container image.
       MODEL_CACHE_SIZE: "5"
+      # Hugging Face cache root inside the container
+      HF_HOME: /root/.cache/huggingface
+      # For Chinese Mainland users, you may need to use a mirror HuggingFace endpoint
+      # HF_ENDPOINT: https://hf-mirror.com
+    # To persist model cache on the host, bind mount the HF_HOME:
+    # volumes:
+    #   - /path/to/huggingface:/root/.cache/huggingface
     deploy:
       resources:
         reservations:

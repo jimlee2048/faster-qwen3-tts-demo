@@ -24,10 +24,10 @@ WORKDIR /app
 COPY . /app
 
 RUN mkdir -p /app/assets/presets /app/assets/samples/parity \
-    && curl -L "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/ref_audio.wav" -o /app/assets/presets/ref_audio.wav \
-    && curl -L "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/ref_audio_2.wav" -o /app/assets/presets/ref_audio_2.wav \
-    && curl -L "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/ref_audio_3.wav" -o /app/assets/presets/ref_audio_3.wav \
-    && curl -L "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/samples/parity/icl_transcripts.txt" -o /app/assets/samples/parity/icl_transcripts.txt
+    && curl --fail --show-error --location --retry 3 --retry-all-errors "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/ref_audio.wav" -o /app/assets/presets/ref_audio.wav \
+    && curl --fail --show-error --location --retry 3 --retry-all-errors "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/ref_audio_2.wav" -o /app/assets/presets/ref_audio_2.wav \
+    && curl --fail --show-error --location --retry 3 --retry-all-errors "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/ref_audio_3.wav" -o /app/assets/presets/ref_audio_3.wav \
+    && curl --fail --show-error --location --retry 3 --retry-all-errors "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main/samples/parity/icl_transcripts.txt" -o /app/assets/samples/parity/icl_transcripts.txt
 
 RUN python3 -m pip install --upgrade pip \
     && python3 -m pip install --index-url https://download.pytorch.org/whl/cu130 torch==2.10 torchaudio \

@@ -1,0 +1,16 @@
+services:
+  faster-qwen3-tts-demo:
+    image: jimlee2048/faster-qwen3-tts-demo:latest
+    container_name: faster-qwen3-tts-demo
+    ports:
+      - "7860:7860"
+    environment:
+      MODEL_CACHE_SIZE: "5"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
